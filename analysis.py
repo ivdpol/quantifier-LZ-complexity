@@ -24,11 +24,15 @@ import statsmodels.formula.api as sm
 from plotnine import *
 import quantifiers
 import numpy as np
+import matplotlib.pyplot as plt 
 
 
-def plot(in_file, quants, max_model_size, out_file='test', orders=None,
-            pairs_plot_per_order=False, summary_pair_plots = False,pairs_uniformity_plot=False,
-            dist_plot=False, num_chars=None,order_type=None):
+def plot(
+    in_file, quants, max_model_size, out_file='test', orders=None,
+    pairs_plot_per_order=False, summary_pair_plots=False,
+    pairs_uniformity_plot=False,
+    dist_plot=False, num_chars=None,order_type=None, wrap_order=False
+):
     """ Makes plots of complexity data, stores them in png files.
 
     Args:
@@ -61,17 +65,28 @@ def plot(in_file, quants, max_model_size, out_file='test', orders=None,
         for quantifier_pair in quantifiers.all_minimal_pairs:
             for order in range(orders):
                 make_complexity_per_size_plot(data, order, quantifier_pair,
-                                out_file = 'graphs/' + str(num_chars) + 'char/' + order_type +'/per_order/LZ/'+ 
-                                quantifier_pair[0] + '_&_' + quantifier_pair[1] +'_order_' + str(order),
-                                add_measure = True)
+                    out_file = 'graphs/' + str(num_chars) + 'char/' + order_type +'/per_order/LZ/'+ 
+                    quantifier_pair[0] + '_&_' + quantifier_pair[1] +'_order_' + str(order),
+                    add_measure = True)
+
+    if wrap_order:
+        for quantifier_pair in quantifiers.all_minimal_pairs:
+            make_complexity_per_size_plot_wrap_order(
+                data, quantifier_pair,
+                out_file = 'graphs/' + str(num_chars) + 'char/' + order_type +'/wrap_order/LZ/'+ 
+                quantifier_pair[0] + '_&_' + quantifier_pair[1]
+            )
 
     if summary_pair_plots:
 
         for quantifier_pair in quantifiers.all_minimal_pairs:
-                make_summary_complexity_per_size_plot(data, quantifier_pair,
-                                out_file = 'graphs/' + str(num_chars) + 'char/' + order_type +'/summary/LZ/'+ 
-                                quantifier_pair[0] + '_&_' + quantifier_pair[1],
-                                add_measure = True)
+            make_summary_complexity_per_size_plot(
+                data, quantifier_pair,
+                out_file = 'graphs/' + str(num_chars) + 'char/' + order_type +'/summary/LZ/'+ 
+                quantifier_pair[0] + '_&_' + quantifier_pair[1],
+                add_measure = True
+            )
+            print('\n', 'pair\t', quantifier_pair, '\n')
 
     if dist_plot:
         make_combo_dist_plot(data, max_model_size, quants, 'dist_test')
@@ -231,6 +246,7 @@ def make_complexity_per_size_plot(data, order, quants=None, out_file='quantifier
 
     plot.save(out_file)
 
+
 def make_uniformity_per_size_plot(data, order,quants=None, out_file='quantifier_pair'):
     """ Makes line plots of the uniformity per quantifier in quants (y-axis), 
         per model size (x-axis)
@@ -259,6 +275,78 @@ def make_uniformity_per_size_plot(data, order,quants=None, out_file='quantifier_
 
     plot.save(out_file)
 
+def make_complexity_per_size_plot_wrap_order(
+    data, quants=None, out_file='quantifier_pair'
+):
+    """ Makes line plots of the complexity per quantifier in quants (y-axis), 
+        per model size (x-axis)
+
+    Args:
+        data: a pandas data frame
+        order: an integer, the name of the model order of the quantifier representation
+        quants: a list of quantifier names
+        out_file: a string, name for a csv file (including .csv)
+        add_measure: True or False, set to True when using facet_wrap
+    """
+    pair2ylimit = {
+        ('at_least_4','at_least_6_or_at_most_2'): (0, 2000), # monotonicity
+        ('at_most_3', 'at_least_6_or_at_most_2'): (0, 2000), # monotonicity
+        ('at_least_3', 'first_3'): (0, 1500), # quantity
+        ('at_least_3', 'last_3'): (0, 1500), # quantity
+        ('not_all', 'not_only'): (0, 750), # conservativity
+        ('most', 'M'): (0, 2600) # conservativity
+    }
+    pair2ybreaks = {
+        ('at_least_4','at_least_6_or_at_most_2'): (0, 500, 1000, 1500, 2000), # monotonicity
+        ('at_most_3', 'at_least_6_or_at_most_2'): (0, 500, 1000, 1500, 2000), # monotonicity
+        ('at_least_3', 'first_3'): (0, 500, 1000, 1500), # quantity
+        ('at_least_3', 'last_3'): (0, 500, 1000, 1500), # quantity
+        ('not_all', 'not_only'): (0, 250, 500, 750), # conservativity
+        ('most', 'M'): (0, 1000, 2000) # conservativity
+    }
+    pair2legendlabels = {
+        ('at_least_4','at_least_6_or_at_most_2'):   
+            ['At least four', 'At least six or at most two'], # monotonicity
+        ('at_most_3', 'at_least_6_or_at_most_2'): 
+            ['At most three', 'At least six or at most two'], # monotonicity
+        ('at_least_3', 'first_3'): ['At least three', 'The first three'], # quantity
+        ('at_least_3', 'last_3'): ['At least three', 'The last three'], # quantity
+        ('not_all', 'not_only'): ['Not all', 'Not only'], # conservativity
+        ('most', 'M'): ['Most', 'M'] # conservativity
+    }
+
+    data2 = data[data['quantifier'].isin(quants)]
+    # "order" the quantifier column by the order specified in quants, to ensure
+    # consistent coloring
+    data2['order_num'] = data2['order_num'].astype(int) + 1
+    data2['quantifier'] = pd.Categorical(data2['quantifier'], ordered=True,
+                                         categories=quants)
+
+    plot = (ggplot(aes(x='max_model_size'), data=data2)            
+            + geom_line(aes(y='C_LZ', group='quantifier',
+                           colour='quantifier'))
+            + geom_point(aes(y='C_LZ', group='quantifier',
+                           colour='quantifier'), size=0.5)
+            + facet_wrap('order_num', nrow=3)
+            + scale_x_continuous(
+                name="Maximum model size", limits=(1,10), minor_breaks=None,
+                breaks=(1,2,3,4,5,6,7,8,9,10), labels=[1,2,3,4,5,6,7,8,9,10])
+            + scale_y_continuous(
+                name="Lempel-Ziv complexity", 
+                breaks=pair2ybreaks[quants], labels=pair2ybreaks[quants]
+            )
+            + scale_color_manual(
+                values=['deepskyblue','red'], labels=pair2legendlabels[quants]
+            )
+            + theme_matplotlib()
+            + theme(legend_position='top', legend_title=element_blank(),
+                axis_title=element_text(size=20), #face="bold"),
+                legend_text=element_text(size=20), legend_direction='vertical')
+
+           )
+
+    plot.save(out_file, width=12, height=9, dpi=900)
+
 def make_summary_complexity_per_size_plot(data, quants=None, out_file='quantifier_pair', add_measure=False):
     """ Makes line plots with confidence interval zone
         of the average complexity per quantifier in quants over the different model orders (y-axis), 
@@ -271,7 +359,50 @@ def make_summary_complexity_per_size_plot(data, quants=None, out_file='quantifie
         out_file: a string, name for a csv file (including .csv)
         add_measure: True or False, set to True when using facet_wrap
     """
-    pd.set_option('mode.chained_assignment',None)
+    pair2yname = {
+        ('at_least_4','at_least_6_or_at_most_2'): "", # monotonicity
+        ('at_most_3', 'at_least_6_or_at_most_2'): "Lempel-Ziv complexity", # monotonicity
+        ('at_least_3', 'first_3'): "Lempel-Ziv complexity", # quantity
+        ('at_least_3', 'last_3'): "", # quantity
+        ('not_all', 'not_only'): "", # conservativity
+        ('most', 'M'): "Lempel-Ziv complexity" # conservativity
+    }
+    pair2ylimit = {
+        ('at_least_4','at_least_6_or_at_most_2'): (0, 1750), # monotonicity
+        ('at_most_3', 'at_least_6_or_at_most_2'): (0, 1750), # monotonicity
+        ('at_least_3', 'first_3'): (0, 1250), # quantity
+        ('at_least_3', 'last_3'): (0, 1250), # quantity
+        ('not_all', 'not_only'): (0, 2500), # conservativity
+        ('most', 'M'): (0, 2500) # conservativity
+    }
+    pair2ybreaks = {
+        ('at_least_4','at_least_6_or_at_most_2'): (0, 500, 1000, 1500), # monotonicity
+        ('at_most_3', 'at_least_6_or_at_most_2'): (0, 500, 1000, 1500), # monotonicity
+        ('at_least_3', 'first_3'): (0, 250, 500, 750, 1000, 1250), # quantity
+        ('at_least_3', 'last_3'): (0, 250, 500, 750, 1000, 1250), # quantity
+        ('not_all', 'not_only'): (0, 500, 1000, 1500, 2000, 2500), # conservativity
+        ('most', 'M'): (0, 500, 1000, 1500, 2000, 2500) # conservativity
+    }
+    pair2ybreaklabels = {
+        ('at_least_4','at_least_6_or_at_most_2'): ("", "", "", ""), # monotonicity
+        ('at_most_3', 'at_least_6_or_at_most_2'): (0, 500, 1000, 1500), # monotonicity
+        ('at_least_3', 'first_3'): (0, 250, 500, 750, 1000, 1250), # quantity
+        ('at_least_3', 'last_3'): ("", "", "", "", "", ""), # quantity
+        ('not_all', 'not_only'): ("", "", "", "", "", ""), # conservativity
+        ('most', 'M'): (0, 500, 1000, 1500, 2000, 2500) # conservativity
+    }
+    pair2legendlabels = {
+        ('at_least_4','at_least_6_or_at_most_2'):   
+            ['At least four', 'At least six or at most two'], # monotonicity
+        ('at_most_3', 'at_least_6_or_at_most_2'): 
+            ['At most three', 'At least six or at most two'], # monotonicity
+        ('at_least_3', 'first_3'): ['At least three', 'The first three'], # quantity
+        ('at_least_3', 'last_3'): ['At least three', 'The last three'], # quantity
+        ('not_all', 'not_only'): ['Not all', 'Not only'], # conservativity
+        ('most', 'M'): ['Most', 'M'] # conservativity
+    }
+
+    pd.set_option('mode.chained_assignment', None)
     data2 = data[data['quantifier'].isin(quants)]
     # "order" the quantifier column by the order specified in quants, to ensure
     # consistent coloring
@@ -289,22 +420,31 @@ def make_summary_complexity_per_size_plot(data, quants=None, out_file='quantifie
 
     plot = (ggplot(aes(x='max_model_size'), data=data2)
             ## mean and confidence interval ##
-            # + stat_summary(aes(y='complexity', group='quantifier',
-            #              colour='quantifier'), geom='ribbon', fun_data='mean_cl_boot', fill='lightgray', size=0)
-            # + stat_summary(aes(y='complexity', group='quantifier',
-            #              colour='quantifier'), geom='line', fun_y=np.mean, size=0.75)
             + stat_summary(aes(y='LZ complexity', group='quantifier',
                          colour='quantifier'), geom='ribbon', fun_data='mean_cl_boot', fill='lightgray', size=0)
             + stat_summary(aes(y='LZ complexity', group='quantifier',
                          colour='quantifier'), geom='line', fun_y=np.mean, size=0.75)
-           # + facet_wrap('measure', scales = "free", labeller=as_labeller({'C_bzip': 'C_Bzip2'}))
-            + theme(panel_spacing=0.4,legend_position="top",legend_title=element_blank())
-            + scale_x_continuous(name="maximum model size")
-            + scale_color_manual(values=['deepskyblue','red'])
+            + stat_summary(aes(y='LZ complexity', group='quantifier',
+                         colour='quantifier'), geom='point', fun_y=np.mean, size=0.75)
+            # + facet_wrap('measure', scales = "free", labeller=as_labeller({'C_bzip': 'C_Bzip2'}))
+            + scale_x_continuous(
+                name="Maximum model size", limits=(1,10), minor_breaks=None,
+                breaks=(1,2,3,4,5,6,7,8,9,10), labels=[1,2,3,4,5,6,7,8,9,10])
+            + scale_y_continuous(
+                name=pair2yname[quants], 
+                breaks=pair2ybreaks[quants], labels=pair2ybreaklabels[quants]
+            )
+            + coord_cartesian(ylim=pair2ylimit[quants])
+            + scale_color_manual(
+                values=['deepskyblue','red'], labels=pair2legendlabels[quants]
+            )
+            + theme_matplotlib()
+            + theme(legend_position='top', legend_title=element_blank(),
+                axis_title=element_text(size=16), #face="bold"),
+                legend_text=element_text(size=16), legend_direction='vertical')
            )
 
-    plot.save(out_file, width=2, height=4)
-
+    plot.save(out_file, width=5, height=5, dpi=900)
 
 def concat_data(in_files,out_file):
     """ Concatinates pandas data frames stored in csv files into one big data frame, 
@@ -382,10 +522,8 @@ if __name__ == '__main__':
             args.orders,
             pairs_plot_per_order=False,
             summary_pair_plots=True,
+            wrap_order=True,
             dist_plot=False,
             pairs_uniformity_plot=False,
             num_chars = args.num_chars,
             order_type = args.order_type)
-
-
-
